@@ -16,7 +16,6 @@ private:
     uint16_t bufferCnt = 0, bufferSize = 0;
     void sendBuffer();
     void printTimestamp();
-    char destination[100];
 
 public:
     void begin(Print *output, bool showTimestamp = true, QueueHandle_t q = NULL);
@@ -24,7 +23,6 @@ public:
 
     virtual size_t write(uint8_t);
     using Print::write;
-
     uint16_t getBufferSize();
     boolean setBufferSize(uint16_t size);
 };

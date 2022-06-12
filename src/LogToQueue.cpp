@@ -45,6 +45,7 @@ uint16_t LogToQueue::getBufferSize()
 
 boolean LogToQueue::setBufferSize(uint16_t size)
 {
+    if (_showTimestamp) size -= 13;
     if (size == 0)
     {
         return false;
