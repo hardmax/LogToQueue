@@ -1,3 +1,5 @@
 LogToQueue   KEYWORD1
 begin    KEYWORD2
 print KEYWORD2
+getBufferSize KEYWORD2
+setBufferSize KEYWORD2
