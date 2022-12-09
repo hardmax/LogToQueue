@@ -34,4 +34,8 @@ Ya comenzar a usar el Log solo se tiene que usar los metodos conocidos de cualqu
 ```cpp
 Log.println(F("=== Iniciando TractoSmart ==="));
 ```
+Puede activar o desactivar el volcado del log al puerto serial a voluntad usuando
+```cpp
+Log.setDump(true);
+```
 Mas informacion en la carpeta ejemplos.

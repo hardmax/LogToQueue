@@ -76,8 +76,10 @@ void LogToQueue::sendBuffer()
 {
     if (this->bufferCnt > 0)
     {
+        if(_enable){
         _logOutput->write(this->buffer, this->bufferCnt);
-        _logOutput->println();        
+        _logOutput->println();
+        }     
         this->bufferCnt=0;
     }
     this->bufferEnd=this->buffer;
@@ -112,7 +114,9 @@ void LogToQueue::printTimestamp()
     xQueueSend(_queue,&timestamp[i],0);
   }
   
-  
-  //
 }
 
+void LogToQueue::setDump(bool enable)
+{
+    _enable = enable;
+}
