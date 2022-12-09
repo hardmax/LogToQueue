@@ -18,6 +18,7 @@ void setup() {
   queueLog = xQueueCreate(100, sizeof(char));
 
   Log.begin(&SerialMon,true,queueLog);
+  //Log.setDump(false);   //Disable serial print
   Log.println(F("=== Iniciando TractoSmart ==="));
   delay(500);
   Log.println(F("Aqui otro mensaje"));
