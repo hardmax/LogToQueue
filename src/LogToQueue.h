@@ -5,15 +5,15 @@
 #include <Arduino.h>
 #include <Print.h>
 
-class LogToQueue : public Print 
+class LogToQueue : public Print
 {
 private:
-    QueueHandle_t _queue; //QueueHandle_t queue;
-    Print* _logOutput;
-    bool _showTimestamp;
+    QueueHandle_t _queue = NULL; // QueueHandle_t queue;
+    Print *_logOutput;
+    bool _showTimestamp = false;
     bool _enable = true;
-    uint8_t* buffer;
-    uint8_t* bufferEnd;
+    uint8_t *buffer = 0;
+    uint8_t *bufferEnd = 0;
     uint16_t bufferCnt = 0, bufferSize = 0;
     void sendBuffer();
     void printTimestamp();
