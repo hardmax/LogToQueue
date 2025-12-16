@@ -29,7 +29,12 @@ private:
     void clearTags();
 
 public:
+    // External queue mode (user provides QueueHandle_t)
     void begin(Print *output, bool showTimestamp = true, QueueHandle_t q = NULL);
+
+    // Managed queue mode (library creates and manages queue)
+    void begin(Print *output, bool showTimestamp, uint16_t queueSize);
+
     ~LogToQueue();
 
     void setDump(bool enable = true);
@@ -39,9 +44,6 @@ public:
     using Print::write;
     uint8_t getBufferSize();
     boolean setBufferSize(uint8_t size);
-
-    // Managed queue mode (v1.2.0)
-    void beginManaged(Print *output, bool showTimestamp = true, uint16_t queueSize = 500);
 
     // Line retrieval API (v1.2.0)
     bool getLine(char* buffer, size_t maxLen, TickType_t timeout = 0);

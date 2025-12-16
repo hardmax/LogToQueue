@@ -6,7 +6,7 @@
  * a simple getLine() API to retrieve complete log lines.
  *
  * Features demonstrated:
- * - beginManaged() - automatic queue creation
+ * - begin() with queue size - automatic queue creation
  * - getLine() - simple line retrieval
  * - Queue monitoring with getQueueMessagesWaiting()
  * - Multi-task logging (producer/consumer pattern)
@@ -97,7 +97,7 @@ void setup() {
 
     // Initialize with managed queue (500 characters)
     // The library creates and manages the queue internally
-    Log.beginManaged(&SerialMon, true, 500);
+    Log.begin(&SerialMon, true, 500);
 
     SerialMon.print("Queue managed: ");
     SerialMon.println(Log.isQueueManaged() ? "SI" : "NO");

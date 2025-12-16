@@ -2,7 +2,7 @@
  * SimpleManaged Example
  *
  * Ejemplo básico del modo Managed Queue (v1.2.0+)
- * Muestra el uso más simple de beginManaged() y getLine()
+ * Muestra el uso más simple de begin() con queue size y getLine()
  * sin complejidad de multi-tarea.
  *
  * Este ejemplo es perfecto para empezar a usar LogToQueue
@@ -26,7 +26,7 @@ void setup() {
 
     // Inicializar en modo managed
     // La librería crea y gestiona el queue automáticamente
-    Log.beginManaged(&SerialMon, true, 500);  // 500 caracteres de queue
+    Log.begin(&SerialMon, true, 500);  // 500 caracteres de queue
 
     SerialMon.print("Modo managed activo: ");
     SerialMon.println(Log.isQueueManaged() ? "SI" : "NO");

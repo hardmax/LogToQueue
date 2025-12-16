@@ -18,7 +18,7 @@ void LogToQueue::begin(Print *output, bool showTimestamp, QueueHandle_t q)
     this->setBufferSize(255);  // Maximum buffer size for uint8_t
 }
 
-void LogToQueue::beginManaged(Print *output, bool showTimestamp, uint16_t queueSize)
+void LogToQueue::begin(Print *output, bool showTimestamp, uint16_t queueSize)
 {
     // Validate parameters
     if (output == NULL || queueSize == 0) {
@@ -36,34 +36,27 @@ void LogToQueue::beginManaged(Print *output, bool showTimestamp, uint16_t queueS
     }
 
     // Create internal queue
-    _queue = xQueueCreate(queueSize, sizeof(char));
-    if (_queue == NULL) {
+    QueueHandle_t managedQueue = xQueueCreate(queueSize, sizeof(char));
+    if (managedQueue == NULL) {
         output->println(F("[LogToQueue] ERROR: Failed to create queue"));
         return;
     }
 
-    // Mark as owned
-    _ownsQueue = true;
-    _managedQueueSize = queueSize;
+    // Call the original begin() with the created queue
+    this->begin(output, showTimestamp, managedQueue);
 
-    // Configure output
-    _logOutput = output;
-    _showTimestamp = showTimestamp;
-
-    // Create mutex (reuse existing logic)
-    _mutex = xSemaphoreCreateMutex();
+    // Verify mutex was created successfully
     if (_mutex == NULL) {
-        // Error mutex - cleanup queue
-        vQueueDelete(_queue);
+        // Error: mutex creation failed - cleanup queue
+        vQueueDelete(managedQueue);
         _queue = NULL;
-        _ownsQueue = false;
-        _managedQueueSize = 0;
         output->println(F("[LogToQueue] ERROR: Failed to create mutex"));
         return;
     }
 
-    // Initialize buffer (reuse existing code)
-    this->setBufferSize(255);
+    // Mark as owned (override the _ownsQueue = false from original begin)
+    _ownsQueue = true;
+    _managedQueueSize = queueSize;
 }
 
 LogToQueue::~LogToQueue()
