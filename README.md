@@ -96,7 +96,7 @@ void setup() {
 
 **Tamaño máximo del buffer:** 255 bytes
 
-Cuando el timestamp está habilitado, 13 bytes se reservan automáticamente para el formato de timestamp (`HH:MM:SS.mmm `), dejando 243 bytes disponibles para el contenido del mensaje.
+Cuando el timestamp está habilitado, 8 bytes se reservan automáticamente para el formato de timestamp (`HH:MM:SS `), dejando 247 bytes disponibles para el contenido del mensaje.
 
 Si intentas configurar un buffer mayor a 255 bytes, se limitará automáticamente al máximo permitido.
 
@@ -447,7 +447,7 @@ Los timestamps se filtran correctamente junto con los mensajes:
 Log.beginManaged(&Serial, true, 500);  // Timestamp habilitado
 Log.setDump("MAIN");
 
-Log.println("[MAIN] Test");    // Serial: "00:00:01.234 [MAIN] Test"
+Log.println("[MAIN] Test");    // Serial: "14:30:15 [MAIN] Test"
 Log.println("[DEBUG] Test");   // Serial: (nada, filtrado con timestamp)
 ```
 
@@ -467,3 +467,110 @@ Ver `examples/TagFiltering/TagFiltering.ino` para un ejemplo completo que demues
 - Cambio dinámico de filtros
 - Verificación de que todos los mensajes van al queue
 - Uso práctico en sistemas con múltiples subsistemas
+
+## Sincronización del RTC (v1.4.0)
+
+Desde la versión 1.4.0, LogToQueue usa el RTC interno del ESP32 en lugar de `millis()`. Esto permite mostrar fecha y hora real cuando el RTC está sincronizado.
+
+### Uso Básico
+
+```cpp
+#include <LogToQueue.h>
+
+LogToQueue Log;
+
+void setup() {
+    Serial.begin(115200);
+
+    // RTC NO sincronizado: muestra epoch (00:00:00)
+    Log.beginManaged(&Serial, true, 500);
+    Log.println("Sistema iniciando");  // "00:00:00 Sistema iniciando"
+}
+```
+
+### Sincronización con NTP
+
+Para mostrar fecha/hora real, sincroniza el RTC con NTP:
+
+```cpp
+#include <LogToQueue.h>
+#include <WiFi.h>
+#include <time.h>
+
+LogToQueue Log;
+
+void setup() {
+    Serial.begin(115200);
+
+    // Conectar WiFi
+    WiFi.begin("SSID", "PASSWORD");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nWiFi conectado");
+
+    // Configurar NTP para sincronizar RTC
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+    // Opcional: Configurar zona horaria (UTC-5 para Perú)
+    setenv("TZ", "CST5", 1);
+    tzset();
+
+    // Esperar sincronización
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+        Serial.println("RTC sincronizado con NTP");
+    } else {
+        Serial.println("Error sincronizando RTC");
+    }
+
+    // Inicializar LogToQueue (ahora con hora real)
+    Log.beginManaged(&Serial, true, 500);
+    Log.println("Sistema iniciado");  // "14:30:15 Sistema iniciado"
+}
+```
+
+### Formato de Timestamp
+
+El timestamp usa el formato `HH:MM:SS ` (8 caracteres):
+
+```
+14:30:15 [MAIN] Sistema iniciado
+14:30:16 [SENSOR] Temperatura: 25C
+14:31:45 [GPS] Coordenadas actualizadas
+```
+
+**Nota:** Si el RTC no está sincronizado, mostrará `00:00:00 ` y se incrementará desde el boot (como época Unix 1970-01-01).
+
+### Zonas Horarias Comunes
+
+```cpp
+// UTC (sin ajuste)
+setenv("TZ", "UTC0", 1);
+
+// Perú (UTC-5)
+setenv("TZ", "CST5", 1);
+
+// México (UTC-6)
+setenv("TZ", "CST6", 1);
+
+// Argentina (UTC-3)
+setenv("TZ", "WART3", 1);
+
+// España (UTC+1)
+setenv("TZ", "CET-1", 1);
+
+// Aplicar cambio
+tzset();
+```
+
+### Ventajas del RTC vs millis()
+
+| Característica | millis() (v1.3.0) | RTC (v1.4.0) |
+|---|---|---|
+| Formato | HH:MM:SS.mmm (13 chars) | HH:MM:SS (8 chars) |
+| Precisión | Milisegundos | Segundos |
+| Fecha/hora real | ❌ No | ✅ Sí (con sincronización) |
+| Buffer disponible | 242 bytes | 247 bytes (+5) |
+| Reinicia en boot | ✅ Sí | ❌ No (si sincronizado) |

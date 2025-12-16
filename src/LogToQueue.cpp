@@ -1,4 +1,5 @@
 #include "LogToQueue.h"
+#include <time.h>  // Para time(), localtime_r(), struct tm
 
 void LogToQueue::begin(Print *output, bool showTimestamp, QueueHandle_t q)
 {
@@ -138,7 +139,7 @@ uint8_t LogToQueue::getBufferSize()
 
 boolean LogToQueue::setBufferSize(uint8_t size)
 {
-    if (_showTimestamp) size -= 13;
+    if (_showTimestamp) size -= 8;
     if (size == 0) {
         return false;
     }
@@ -200,36 +201,26 @@ void LogToQueue::printTimestamp()
 {
     // ASSUMPTION: Caller holds _mutex
 
-    // Division constants
-    const unsigned long MSECS_PER_SEC       = 1000;
-    const unsigned long SECS_PER_MIN        = 60;
-    const unsigned long SECS_PER_HOUR       = 3600;
-    const unsigned long SECS_PER_DAY        = 86400;
+    // Obtener tiempo del RTC interno
+    time_t now = time(NULL);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
 
-    // Total time
-    const unsigned long msecs               =  millis();
-    const unsigned long secs                =  msecs / MSECS_PER_SEC;
+    // Formato: "HH:MM:SS " (8 caracteres + null terminator)
+    char timestamp[9];
+    sprintf(timestamp, "%02d:%02d:%02d ",
+            timeinfo.tm_hour,
+            timeinfo.tm_min,
+            timeinfo.tm_sec);
 
-    // Time in components
-    const unsigned long MilliSeconds        =  msecs % MSECS_PER_SEC;
-    const unsigned long Seconds             =  secs  % SECS_PER_MIN ;
-    const unsigned long Minutes             = (secs  / SECS_PER_MIN) % SECS_PER_MIN;
-    const unsigned long Hours               = (secs  % SECS_PER_DAY) / SECS_PER_HOUR;
-
-    // Time as string (optimized size: 13 chars + null terminator)
-    char timestamp[14];
-    sprintf(timestamp, "%02d:%02d:%02d.%03d ", Hours, Minutes, Seconds, MilliSeconds);
-
-    // FIXED (v1.3.0): Add timestamp to buffer instead of printing directly
-    // This ensures timestamp and message are filtered together as one unit
-    for (int i = 0; i < 13 && this->bufferCnt < this->bufferSize; i++) {
+    // Copiar timestamp al buffer interno (8 caracteres)
+    for (int i = 0; i < 8 && this->bufferCnt < this->bufferSize; i++) {
         this->buffer[this->bufferCnt++] = timestamp[i];
     }
 
-    // Send timestamp to queue with circular behavior
+    // Enviar timestamp al queue (8 caracteres)
     if (_queue != NULL) {
-        for (int i = 0; i < 13; i++)
-        {
+        for (int i = 0; i < 8; i++) {
             BaseType_t queueResult = xQueueSend(_queue, &timestamp[i], 0);
             if (queueResult != pdTRUE) {
                 // Queue full - circular behavior: remove oldest, add new
@@ -415,14 +406,13 @@ bool LogToQueue::isTagAllowed(const char* buffer, uint8_t len) const
         return true;
     }
 
-    // Detectar y saltar timestamp si existe (formato: "HH:MM:SS.mmm ")
-    // Timestamp tiene 13 caracteres: "00:00:00.000 "
+    // Detectar y saltar timestamp si existe (formato: "HH:MM:SS ")
+    // Timestamp tiene 8 caracteres: "00:00:00 "
     uint8_t offset = 0;
-    if (len >= 13 &&
-        buffer[2] == ':' && buffer[5] == ':' &&
-        buffer[8] == '.' && buffer[12] == ' ') {
+    if (len >= 8 &&
+        buffer[2] == ':' && buffer[5] == ':' && buffer[7] == ' ') {
         // Es muy probable que sea un timestamp, saltarlo
-        offset = 13;
+        offset = 8;
     }
 
     // Verificar si hay suficientes caracteres después del timestamp
