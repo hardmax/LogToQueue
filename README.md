@@ -59,3 +59,76 @@ while (xQueueReceive(queueLog, &datoRecibido, 0) == pdTRUE) {
 ```
 
 Mas informacion en la carpeta ejemplos.
+
+## Thread-Safety (v1.1.0+)
+
+Desde la versión 1.1.0, LogToQueue es **thread-safe** y puede ser llamado de forma segura desde múltiples tareas de FreeRTOS concurrentemente. Las operaciones internas están protegidas por un mutex.
+
+**Ejemplo de uso multi-tarea:**
+```cpp
+LogToQueue Log;
+
+void taskA(void *param) {
+    while (1) {
+        Log.println("Mensaje desde Task A");
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+
+void taskB(void *param) {
+    while (1) {
+        Log.println("Mensaje desde Task B");
+        vTaskDelay(150 / portTICK_PERIOD_MS);
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    queueLog = xQueueCreate(500, sizeof(char));
+    Log.begin(&Serial, true, queueLog);
+
+    xTaskCreate(taskA, "TaskA", 2048, NULL, 1, NULL);
+    xTaskCreate(taskB, "TaskB", 2048, NULL, 1, NULL);
+}
+```
+
+## Límite de Buffer
+
+**Tamaño máximo del buffer:** 255 bytes
+
+Cuando el timestamp está habilitado, 13 bytes se reservan automáticamente para el formato de timestamp (`HH:MM:SS.mmm `), dejando 243 bytes disponibles para el contenido del mensaje.
+
+Si intentas configurar un buffer mayor a 255 bytes, se limitará automáticamente al máximo permitido.
+
+## Comportamiento de Queue Lleno
+
+Cuando el queue de FreeRTOS está lleno, LogToQueue implementa un **comportamiento circular automático**:
+
+- Se elimina el carácter más antiguo del queue
+- Se inserta el nuevo carácter en su lugar
+- Esto asegura que los mensajes nuevos nunca se pierden
+
+Este comportamiento garantiza que siempre tendrás los datos más recientes disponibles, incluso cuando el queue alcanza su capacidad máxima.
+
+**Recomendación:** Dimensiona tu queue apropiadamente según la tasa de generación de logs en tu aplicación.
+
+## Optimizaciones de Memoria (v1.1.0+)
+
+La versión 1.1.0 incluye optimizaciones significativas:
+
+- Reducción del tamaño del objeto en 2 bytes (eliminación de puntero redundante)
+- Optimización del buffer de timestamp (ahorro de 7 bytes en stack por llamada)
+- Corrección de memory leak en el destructor
+- Verificación mejorada de asignación de memoria
+
+**Antes vs Después:**
+- Tamaño de objeto: 22 bytes → 20 bytes
+- Buffer timestamp: 20 bytes → 14 bytes
+- Heap adicional: +80 bytes (mutex para thread-safety)
+
+## Notas Importantes
+
+- Esta biblioteca requiere FreeRTOS y solo es compatible con ESP32
+- El mutex se crea automáticamente en `begin()` y se destruye en el destructor
+- Las operaciones de queue son thread-safe por diseño de FreeRTOS
+- El buffer interno está protegido por mutex para uso multi-tarea seguro
