@@ -40,12 +40,18 @@ Log.setDump(true);
 ```
 Para recibir los datos en el Queue:
 ```cpp
- if (xQueueReceive(queueLog, &datoRecibido, 0) == pdTRUE) {
+char datoRecibido;  // Variable para recibir un carácter del queue
+
+if (xQueueReceive(queueLog, &datoRecibido, 0) == pdTRUE) {
     SerialMon.print(datoRecibido);      //aqui hacemos lo que querramos con el dato recibido
- }
+}
 ```
 Tambien podemos almacenar todo lo enviado hasta encontrar un retorno de carro y guardarlo en un SD o cualquier cosa que necesitemos
 ```cpp
+char datoRecibido;
+char bufferDatos[256];  // Buffer para almacenar línea completa
+int indice = 0;
+
 while (xQueueReceive(queueLog, &datoRecibido, 0) == pdTRUE) {
     if (datoRecibido == '\n'){          //Si se imprime una nueva linea se ejecuta o se hace algo con el buffer
       bufferDatos[indice] = '\0';       //Añadimos el caracter termino del array (para que no se imprima el resto del array)
@@ -53,9 +59,11 @@ while (xQueueReceive(queueLog, &datoRecibido, 0) == pdTRUE) {
       indice = 0;
       continue;                         //Salimos del bucle para continuar con otros procesos
     }
-    bufferDatos[indice] = datoRecibido;
-    indice++;
-  }
+    if (indice < 255) {                 //Verificar que no se desborde el buffer
+      bufferDatos[indice] = datoRecibido;
+      indice++;
+    }
+}
 ```
 
 Mas informacion en la carpeta ejemplos.
@@ -96,7 +104,7 @@ void setup() {
 
 **Tamaño máximo del buffer:** 255 bytes
 
-Cuando el timestamp está habilitado, 8 bytes se reservan automáticamente para el formato de timestamp (`HH:MM:SS `), dejando 247 bytes disponibles para el contenido del mensaje.
+Cuando el timestamp está habilitado, 9 bytes se reservan automáticamente para el formato de timestamp (`HH:MM:SS ` - un espacio al final), dejando 246 bytes disponibles para el contenido del mensaje.
 
 Si intentas configurar un buffer mayor a 255 bytes, se limitará automáticamente al máximo permitido.
 
@@ -537,12 +545,12 @@ void setup() {
 
 ### Formato de Timestamp
 
-El timestamp usa el formato `HH:MM:SS ` (8 caracteres):
+El timestamp usa el formato `HH:MM:SS ` (9 caracteres: 8 de tiempo + 1 espacio):
 
 ```
-14:30:15 [MAIN] Sistema iniciado
-14:30:16 [SENSOR] Temperatura: 25C
-14:31:45 [GPS] Coordenadas actualizadas
+14:30:15  [MAIN] Sistema iniciado
+14:30:16  [SENSOR] Temperatura: 25C
+14:31:45  [GPS] Coordenadas actualizadas
 ```
 
 **Nota:** Si el RTC no está sincronizado, mostrará `00:00:00 ` y se incrementará desde el boot (como época Unix 1970-01-01).
@@ -573,8 +581,8 @@ tzset();
 
 | Característica | millis() (v1.3.0) | RTC (v1.4.0) |
 |---|---|---|
-| Formato | HH:MM:SS.mmm (13 chars) | HH:MM:SS (8 chars) |
+| Formato | HH:MM:SS.mmm (13 chars) | HH:MM:SS (9 chars) |
 | Precisión | Milisegundos | Segundos |
 | Fecha/hora real | ❌ No | ✅ Sí (con sincronización) |
-| Buffer disponible | 242 bytes | 247 bytes (+5) |
+| Buffer disponible | 242 bytes | 246 bytes (+4) |
 | Reinicia en boot | ✅ Sí | ❌ No (si sincronizado) |

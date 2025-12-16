@@ -7,11 +7,11 @@ QueueHandle_t queueLog;
 
 LogToQueue Log;
 
-char datoRecibido[1];
+char datoRecibido;
 
 void setup() {
   SerialMon.begin(9600);
-  delay(1000);
+  delay(3000);
   SerialMon.println("\nIniciando Prueba");
   queueLog = xQueueCreate(100, sizeof(char));
 
@@ -24,7 +24,7 @@ void setup() {
 
 void loop() {
   if (xQueueReceive(queueLog, &datoRecibido, 0) == pdTRUE) {
-    SerialMon.print(datoRecibido);
+    SerialMon.print((char)datoRecibido);
     //SerialMon.println("=======");
   }
 }

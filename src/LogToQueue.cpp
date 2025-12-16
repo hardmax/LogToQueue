@@ -88,21 +88,10 @@ LogToQueue::~LogToQueue()
 
 size_t LogToQueue::write(uint8_t character)
 {
-    // 1. Queue operations (thread-safe by FreeRTOS)
-    if (_queue != NULL) {
-        BaseType_t queueResult = xQueueSend(_queue, &character, 0);
-        if (queueResult != pdTRUE) {
-            // Queue full - circular behavior: remove oldest, add new
-            uint8_t discarded;
-            if (xQueueReceive(_queue, &discarded, 0) == pdTRUE) {
-                xQueueSend(_queue, &character, 0);
-            }
-        }
-    }
-
-    // 2. Buffer operations (protect with mutex)
+    // 1. Buffer operations (protect with mutex)
     if (_mutex != NULL && xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
 
+        // Check if we need timestamp BEFORE sending to queue
         if (_showTimestamp && this->bufferCnt == 0) {
             printTimestamp();
         }
@@ -115,11 +104,30 @@ size_t LogToQueue::write(uint8_t character)
             } else {
                 // Buffer full: flush and add character
                 this->sendBuffer();
-                this->buffer[this->bufferCnt++] = character;
+                // After flush, check if we need timestamp
+                if (_showTimestamp && this->bufferCnt == 0) {
+                    printTimestamp();
+                }
+                // Verify buffer has space before adding character
+                if (this->bufferCnt < this->bufferSize) {
+                    this->buffer[this->bufferCnt++] = character;
+                }
             }
         }
 
         xSemaphoreGive(_mutex);
+    }
+
+    // 2. Queue operations (after timestamp has been sent to queue)
+    if (_queue != NULL) {
+        BaseType_t queueResult = xQueueSend(_queue, &character, 0);
+        if (queueResult != pdTRUE) {
+            // Queue full - circular behavior: remove oldest, add new
+            uint8_t discarded;
+            if (xQueueReceive(_queue, &discarded, 0) == pdTRUE) {
+                xQueueSend(_queue, &character, 0);
+            }
+        }
     }
 
     return 1;
@@ -132,7 +140,7 @@ uint8_t LogToQueue::getBufferSize()
 
 boolean LogToQueue::setBufferSize(uint8_t size)
 {
-    if (_showTimestamp) size -= 8;
+    if (_showTimestamp) size -= 9;  // Reserve 9 bytes for "HH:MM:SS " timestamp
     if (size == 0) {
         return false;
     }
@@ -196,24 +204,29 @@ void LogToQueue::printTimestamp()
 
     // Obtener tiempo del RTC interno
     time_t now = time(NULL);
-    struct tm timeinfo;
+    struct tm timeinfo = {0};  // Initialize to zero
     localtime_r(&now, &timeinfo);
 
-    // Formato: "HH:MM:SS " (8 caracteres + null terminator)
-    char timestamp[9];
-    sprintf(timestamp, "%02d:%02d:%02d ",
-            timeinfo.tm_hour,
-            timeinfo.tm_min,
-            timeinfo.tm_sec);
+    // Ensure values are in valid range to prevent buffer overflow
+    int hour = timeinfo.tm_hour % 24;
+    int min = timeinfo.tm_min % 60;
+    int sec = timeinfo.tm_sec % 60;
+    if (hour < 0) hour = 0;
+    if (min < 0) min = 0;
+    if (sec < 0) sec = 0;
 
-    // Copiar timestamp al buffer interno (8 caracteres)
-    for (int i = 0; i < 8 && this->bufferCnt < this->bufferSize; i++) {
+    // Formato: "HH:MM:SS " (9 caracteres: 8 de tiempo + 1 espacio)
+    char timestamp[16];  // Extra space for safety
+    sprintf(timestamp, "%02d:%02d:%02d ", hour, min, sec);
+
+    // Copiar timestamp al buffer interno (9 caracteres)
+    for (int i = 0; i < 9 && this->bufferCnt < this->bufferSize; i++) {
         this->buffer[this->bufferCnt++] = timestamp[i];
     }
 
-    // Enviar timestamp al queue (8 caracteres)
+    // Enviar timestamp al queue (9 caracteres)
     if (_queue != NULL) {
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 9; i++) {
             BaseType_t queueResult = xQueueSend(_queue, &timestamp[i], 0);
             if (queueResult != pdTRUE) {
                 // Queue full - circular behavior: remove oldest, add new
@@ -400,12 +413,12 @@ bool LogToQueue::isTagAllowed(const char* buffer, uint8_t len) const
     }
 
     // Detectar y saltar timestamp si existe (formato: "HH:MM:SS ")
-    // Timestamp tiene 8 caracteres: "00:00:00 "
+    // Timestamp tiene 9 caracteres: "00:00:00 " (un espacio al final)
     uint8_t offset = 0;
-    if (len >= 8 &&
+    if (len >= 9 &&
         buffer[2] == ':' && buffer[5] == ':' && buffer[7] == ' ') {
         // Es muy probable que sea un timestamp, saltarlo
-        offset = 8;
+        offset = 9;
     }
 
     // Verificar si hay suficientes caracteres después del timestamp
