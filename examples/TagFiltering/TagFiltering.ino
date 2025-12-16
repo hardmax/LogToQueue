@@ -36,7 +36,7 @@ void setup() {
     SerialMon.println("========================================\n");
 
     // Initialize in managed mode with 1000 character queue
-    Log.beginManaged(&SerialMon, true, 1000);
+    Log.begin(&SerialMon, true, 1000);
 
     SerialMon.print("Modo managed activo: ");
     SerialMon.println(Log.isQueueManaged() ? "SI" : "NO");

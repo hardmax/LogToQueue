@@ -51,7 +51,7 @@ void setup() {
 
     // Inicializar LogToQueue en modo managed
     // Queue de 1000 caracteres para buffer robusto
-    Log.beginManaged(&SerialMon, true, 1000);
+    Log.begin(&SerialMon, true, 1000);
 
     SerialMon.println("LogToQueue iniciado en modo managed");
     SerialMon.printf("Queue size: %d caracteres\n\n", Log.getQueueSize());

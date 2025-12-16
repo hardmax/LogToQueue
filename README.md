@@ -137,6 +137,10 @@ La versión 1.1.0 incluye optimizaciones significativas:
 
 Desde la versión 1.2.0, LogToQueue puede gestionar su propio queue interno, simplificando el código y proporcionando una API más conveniente.
 
+**Nota:** La API usa métodos `begin()` sobrecargados. El compilador elige automáticamente la versión correcta según los parámetros:
+- `begin(&Serial, true, queueHandle)` - Modo legacy (cola externa, tipo `QueueHandle_t`)
+- `begin(&Serial, true, 500)` - Modo managed (cola interna, tipo `uint16_t` para tamaño)
+
 ### Uso Básico - Modo Managed
 
 ```cpp
@@ -148,7 +152,7 @@ void setup() {
     Serial.begin(115200);
 
     // La librería crea y gestiona el queue internamente
-    Log.beginManaged(&Serial, true, 500);  // 500 caracteres de queue
+    Log.begin(&Serial, true, 500);  // 500 caracteres de queue
 
     Log.println("=== Sistema Iniciado ===");
 }
@@ -195,7 +199,7 @@ bool getLine(char* buffer, size_t maxLen, TickType_t timeout = 0)
 
 | Característica | Modo Legacy | Modo Managed |
 |---|---|---|
-| **Creación del queue** | Usuario con `xQueueCreate()` | Automática con `beginManaged()` |
+| **Creación del queue** | Usuario con `xQueueCreate()` | Automática con `begin(output, timestamp, queueSize)` |
 | **Gestión de memoria** | Usuario libera con `vQueueDelete()` | Automática en destructor |
 | **Recuperación de datos** | Manual con `xQueueReceive()` | Simple con `getLine()` |
 | **Líneas de código** | ~15 líneas | ~5 líneas |
@@ -242,7 +246,7 @@ void setup() {
     Serial.begin(115200);
 
     // Crear queue de 500 caracteres
-    Log.beginManaged(&Serial, true, 500);
+    Log.begin(&Serial, true, 500);
 
     // Crear tareas producer/consumer
     xTaskCreate(taskProducer, "Producer", 2048, NULL, 1, NULL);
@@ -307,7 +311,7 @@ void loop() {
 ```cpp
 void setup() {
     Serial.begin(115200);
-    Log.beginManaged(&Serial, true, 500);
+    Log.begin(&Serial, true, 500);
 }
 
 void loop() {
@@ -334,7 +338,7 @@ LogToQueue Log;
 
 void setup() {
     Serial.begin(115200);
-    Log.beginManaged(&Serial, true, 500);
+    Log.begin(&Serial, true, 500);
 
     // Configurar filtro para solo mostrar [MAIN], [SERIAL] y [GPS]
     Log.setDump("MAIN,SERIAL,GPS");
@@ -444,7 +448,7 @@ Log.println("[DEBUG] Visible");      // ✓ Impreso
 Los timestamps se filtran correctamente junto con los mensajes:
 
 ```cpp
-Log.beginManaged(&Serial, true, 500);  // Timestamp habilitado
+Log.begin(&Serial, true, 500);  // Timestamp habilitado
 Log.setDump("MAIN");
 
 Log.println("[MAIN] Test");    // Serial: "14:30:15 [MAIN] Test"
@@ -483,7 +487,7 @@ void setup() {
     Serial.begin(115200);
 
     // RTC NO sincronizado: muestra epoch (00:00:00)
-    Log.beginManaged(&Serial, true, 500);
+    Log.begin(&Serial, true, 500);
     Log.println("Sistema iniciando");  // "00:00:00 Sistema iniciando"
 }
 ```
@@ -526,7 +530,7 @@ void setup() {
     }
 
     // Inicializar LogToQueue (ahora con hora real)
-    Log.beginManaged(&Serial, true, 500);
+    Log.begin(&Serial, true, 500);
     Log.println("Sistema iniciado");  // "14:30:15 Sistema iniciado"
 }
 ```
