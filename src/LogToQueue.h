@@ -20,11 +20,20 @@ private:
     void sendBuffer();
     void printTimestamp();
 
+    // Tag filtering (v1.3.0)
+    char** _allowedTags = NULL;     // Array de tags permitidos
+    uint8_t _tagCount = 0;          // Número de tags configurados
+    uint8_t _maxTags = 10;          // Máximo de tags soportados
+
+    bool isTagAllowed(const char* buffer, uint8_t len) const;
+    void clearTags();
+
 public:
     void begin(Print *output, bool showTimestamp = true, QueueHandle_t q = NULL);
     ~LogToQueue();
 
     void setDump(bool enable = true);
+    void setDump(const char* tags); // Tag filtering (v1.3.0)
 
     virtual size_t write(uint8_t);
     using Print::write;

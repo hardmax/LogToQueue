@@ -320,3 +320,150 @@ void loop() {
 ```
 
 **Resultado**: -8 líneas de código, gestión automática, código más limpio.
+
+## Filtrado por Tags (v1.3.0)
+
+Desde la versión 1.3.0, LogToQueue puede filtrar mensajes por etiquetas (tags) en el puerto serial configurado. **Importante:** El filtrado solo afecta lo que se imprime en el puerto serial; todos los mensajes siguen enviándose al queue sin filtrar.
+
+### Uso Básico
+
+```cpp
+#include <LogToQueue.h>
+
+LogToQueue Log;
+
+void setup() {
+    Serial.begin(115200);
+    Log.beginManaged(&Serial, true, 500);
+
+    // Configurar filtro para solo mostrar [MAIN], [SERIAL] y [GPS]
+    Log.setDump("MAIN,SERIAL,GPS");
+
+    // Estos mensajes SE IMPRIMEN en serial:
+    Log.println("[MAIN] Sistema iniciado");      // ✓ Pasa filtro
+    Log.println("[SERIAL] Puerto abierto");      // ✓ Pasa filtro
+    Log.println("[GPS] Coordenadas: 10,20");     // ✓ Pasa filtro
+
+    // Estos mensajes NO SE IMPRIMEN en serial:
+    Log.println("[SENSOR] Temperatura: 25C");    // ✗ Tag no permitido
+    Log.println("[DEBUG] Valor x=10");           // ✗ Tag no permitido
+
+    // Mensajes sin tag - siempre se imprimen:
+    Log.println("Mensaje sin tag");              // ✓ Se imprime
+
+    // IMPORTANTE: TODOS los mensajes (filtrados o no) van al queue
+}
+
+void loop() {
+    char line[256];
+
+    // Recuperar todos los mensajes del queue (sin filtrar)
+    if (Log.getLine(line, sizeof(line))) {
+        // Aquí recibes TODOS los mensajes, incluso los filtrados
+        procesarLinea(line);
+    }
+}
+```
+
+### API de setDump()
+
+#### Modo Boolean (compatible con versiones anteriores):
+```cpp
+Log.setDump(true);   // Habilitar todo (sin filtrado)
+Log.setDump(false);  // Deshabilitar todo
+```
+
+#### Modo Filtrado por Tags (v1.3.0):
+```cpp
+// Filtrar por tags específicos (separados por comas)
+Log.setDump("MAIN,SERIAL,GPS");
+
+// Espacios son ignorados
+Log.setDump("MAIN, SERIAL , GPS");  // Equivalente al anterior
+
+// String vacío = sin filtrado (permitir todos)
+Log.setDump("");
+
+// NULL = sin filtrado (permitir todos)
+Log.setDump(NULL);
+```
+
+### Formato de Tags
+
+Los tags deben seguir el formato `[NOMBRE]` al inicio del mensaje:
+
+```cpp
+// Tags válidos:
+Log.println("[MAIN] Mensaje");       // ✓ Tag válido
+Log.println("[GPS] Coordenadas");    // ✓ Tag válido
+Log.println("[SENSOR] Datos");       // ✓ Tag válido
+
+// Sin tag (siempre se imprime según setDump):
+Log.println("Mensaje sin tag");      // ✓ Se imprime si _enable=true
+
+// Tags inválidos (se tratan como sin tag):
+Log.println("MAIN Mensaje");         // Sin corchetes
+Log.println("[] Mensaje");           // Tag vacío
+Log.println("[ MAIN] Mensaje");      // Espacio antes del tag
+```
+
+### Cambiar Filtro Dinámicamente
+
+```cpp
+// Inicialmente permitir MAIN y GPS
+Log.setDump("MAIN,GPS");
+Log.println("[MAIN] Visible");       // ✓ Impreso
+Log.println("[GPS] Visible");        // ✓ Impreso
+Log.println("[DEBUG] No visible");   // ✗ Bloqueado
+
+// Cambiar a solo DEBUG
+Log.setDump("DEBUG");
+Log.println("[MAIN] No visible");    // ✗ Bloqueado
+Log.println("[DEBUG] Visible");      // ✓ Impreso
+
+// Volver a permitir todos
+Log.setDump("");  // O también: Log.setDump(true);
+Log.println("[MAIN] Visible");       // ✓ Impreso
+Log.println("[DEBUG] Visible");      // ✓ Impreso
+```
+
+### Comportamiento del Filtrado
+
+| Configuración | Mensaje | ¿Se imprime en Serial? | ¿Va al Queue? |
+|---|---|---|---|
+| `setDump(true)` | `[MAIN] Test` | ✓ Sí | ✓ Sí |
+| `setDump(false)` | `[MAIN] Test` | ✗ No | ✓ Sí |
+| `setDump("MAIN")` | `[MAIN] Test` | ✓ Sí | ✓ Sí |
+| `setDump("MAIN")` | `[DEBUG] Test` | ✗ No | ✓ Sí |
+| `setDump("MAIN")` | `Sin tag` | ✓ Sí | ✓ Sí |
+
+**Regla importante:** El queue recibe TODOS los mensajes sin importar el filtro. El filtro solo afecta lo que se imprime en el puerto serial configurado.
+
+### Timestamps y Filtrado
+
+Los timestamps se filtran correctamente junto con los mensajes:
+
+```cpp
+Log.beginManaged(&Serial, true, 500);  // Timestamp habilitado
+Log.setDump("MAIN");
+
+Log.println("[MAIN] Test");    // Serial: "00:00:01.234 [MAIN] Test"
+Log.println("[DEBUG] Test");   // Serial: (nada, filtrado con timestamp)
+```
+
+**No hay timestamps huérfanos** - el timestamp solo aparece si el mensaje pasa el filtro.
+
+### Límites y Consideraciones
+
+- **Máximo de tags:** 10 tags simultáneos (configurable internamente)
+- **Longitud máxima de tag:** 20 caracteres
+- **Memoria adicional:** ~6 bytes en objeto + ~120 bytes heap si se usan tags
+- **Thread-safety:** `setDump()` debe llamarse desde `setup()` o desde una sola tarea
+
+### Ejemplo Completo
+
+Ver `examples/TagFiltering/TagFiltering.ino` para un ejemplo completo que demuestra:
+- Filtrado por múltiples tags
+- Cambio dinámico de filtros
+- Verificación de que todos los mensajes van al queue
+- Uso práctico en sistemas con múltiples subsistemas

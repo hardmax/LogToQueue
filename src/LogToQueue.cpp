@@ -67,6 +67,9 @@ void LogToQueue::beginManaged(Print *output, bool showTimestamp, uint16_t queueS
 
 LogToQueue::~LogToQueue()
 {
+    // Clean up tags (v1.3.0)
+    clearTags();
+
     // Clean up managed queue
     if (_ownsQueue && _queue != NULL) {
         vQueueDelete(_queue);
@@ -180,8 +183,14 @@ void LogToQueue::sendBuffer()
     if (this->bufferCnt > 0)
     {
         if (_enable) {
-            _logOutput->write(this->buffer, this->bufferCnt);
-            _logOutput->println();
+            // Apply tag filter (v1.3.0)
+            // Buffer now includes timestamp (if enabled), so filter checks both
+            if (isTagAllowed((const char*)this->buffer, this->bufferCnt)) {
+                _logOutput->write(this->buffer, this->bufferCnt);
+                _logOutput->println();
+            }
+            // If tag is not allowed, message is discarded for serial output
+            // (but was already sent to queue in write())
         }
         this->bufferCnt = 0;
     }
@@ -211,7 +220,11 @@ void LogToQueue::printTimestamp()
     char timestamp[14];
     sprintf(timestamp, "%02d:%02d:%02d.%03d ", Hours, Minutes, Seconds, MilliSeconds);
 
-    _logOutput->print(timestamp);
+    // FIXED (v1.3.0): Add timestamp to buffer instead of printing directly
+    // This ensures timestamp and message are filtered together as one unit
+    for (int i = 0; i < 13 && this->bufferCnt < this->bufferSize; i++) {
+        this->buffer[this->bufferCnt++] = timestamp[i];
+    }
 
     // Send timestamp to queue with circular behavior
     if (_queue != NULL) {
@@ -295,4 +308,167 @@ UBaseType_t LogToQueue::getQueueMessagesWaiting() const
         return 0;
     }
     return uxQueueMessagesWaiting(_queue);
+}
+
+// Tag filtering implementation (v1.3.0)
+
+void LogToQueue::clearTags()
+{
+    if (_allowedTags != NULL) {
+        // Liberar cada string individual
+        for (uint8_t i = 0; i < _tagCount; i++) {
+            if (_allowedTags[i] != NULL) {
+                free(_allowedTags[i]);
+                _allowedTags[i] = NULL;
+            }
+        }
+
+        // Liberar array de punteros
+        free(_allowedTags);
+        _allowedTags = NULL;
+    }
+
+    _tagCount = 0;
+}
+
+void LogToQueue::setDump(const char* tags)
+{
+    // Limpiar tags anteriores
+    clearTags();
+
+    // NULL o string vacío = sin filtrado (permitir todos)
+    if (tags == NULL || tags[0] == '\0') {
+        _enable = true;
+        return;
+    }
+
+    // Habilitar dump con filtrado
+    _enable = true;
+
+    // Contar tags (separados por comas)
+    uint8_t count = 1;
+    const char* p = tags;
+    while (*p != '\0' && count < _maxTags) {
+        if (*p == ',') count++;
+        p++;
+    }
+
+    // Asignar array de punteros
+    _allowedTags = (char**)malloc(count * sizeof(char*));
+    if (_allowedTags == NULL) {
+        _tagCount = 0;
+        return;  // Error de memoria
+    }
+
+    // Parsear y copiar cada tag
+    _tagCount = 0;
+    const char* start = tags;
+    const char* end = tags;
+
+    while (*end != '\0' && _tagCount < count) {
+        // Buscar próxima coma o fin de string
+        while (*end != '\0' && *end != ',') {
+            end++;
+        }
+
+        // Calcular longitud del tag
+        size_t tagLen = end - start;
+
+        // Saltar espacios al inicio
+        while (tagLen > 0 && *start == ' ') {
+            start++;
+            tagLen--;
+        }
+
+        // Saltar espacios al final
+        while (tagLen > 0 && *(start + tagLen - 1) == ' ') {
+            tagLen--;
+        }
+
+        // Copiar tag si no está vacío
+        if (tagLen > 0) {
+            _allowedTags[_tagCount] = (char*)malloc(tagLen + 1);
+            if (_allowedTags[_tagCount] != NULL) {
+                strncpy(_allowedTags[_tagCount], start, tagLen);
+                _allowedTags[_tagCount][tagLen] = '\0';
+                _tagCount++;
+            }
+        }
+
+        // Avanzar al siguiente tag
+        if (*end == ',') {
+            end++;
+            start = end;
+        }
+    }
+}
+
+bool LogToQueue::isTagAllowed(const char* buffer, uint8_t len) const
+{
+    // Si no hay tags configurados, permitir todo
+    if (_tagCount == 0 || _allowedTags == NULL) {
+        return true;
+    }
+
+    // Si el buffer está vacío, permitir
+    if (len == 0 || buffer == NULL) {
+        return true;
+    }
+
+    // Detectar y saltar timestamp si existe (formato: "HH:MM:SS.mmm ")
+    // Timestamp tiene 13 caracteres: "00:00:00.000 "
+    uint8_t offset = 0;
+    if (len >= 13 &&
+        buffer[2] == ':' && buffer[5] == ':' &&
+        buffer[8] == '.' && buffer[12] == ' ') {
+        // Es muy probable que sea un timestamp, saltarlo
+        offset = 13;
+    }
+
+    // Verificar si hay suficientes caracteres después del timestamp
+    if (offset >= len) {
+        return true;  // Sin mensaje después del timestamp
+    }
+
+    // Puntero al inicio del mensaje (después del timestamp si existe)
+    const char* msg = buffer + offset;
+    uint8_t msgLen = len - offset;
+
+    // Si el mensaje no comienza con '[', no tiene tag (permitir)
+    if (msgLen == 0 || msg[0] != '[') {
+        return true;  // Mensajes sin tag se permiten
+    }
+
+    // Buscar fin del tag ']'
+    uint8_t tagEndPos = 0;
+    for (uint8_t i = 1; i < msgLen && i < 20; i++) {  // Máximo 20 chars para tag
+        if (msg[i] == ']') {
+            tagEndPos = i;
+            break;
+        }
+    }
+
+    // Si no hay ']' o está vacío, no es un tag válido
+    if (tagEndPos == 0 || tagEndPos <= 1) {
+        return true;  // No es un tag válido, permitir
+    }
+
+    // Extraer tag sin corchetes
+    uint8_t tagLen = tagEndPos - 1;
+
+    // Comparar con cada tag permitido
+    for (uint8_t i = 0; i < _tagCount; i++) {
+        if (_allowedTags[i] != NULL) {
+            size_t allowedLen = strlen(_allowedTags[i]);
+
+            // Comparar longitud y contenido
+            if (tagLen == allowedLen &&
+                strncmp(_allowedTags[i], msg + 1, tagLen) == 0) {
+                return true;  // Tag encontrado en lista permitida
+            }
+        }
+    }
+
+    // Tag no está en la lista permitida
+    return false;
 }
