@@ -5,6 +5,7 @@ void LogToQueue::begin(Print *output, bool showTimestamp, QueueHandle_t q)
     _logOutput = output;
     _showTimestamp = showTimestamp;
 	_queue = q;
+    _ownsQueue = false;  // External queue - user manages it
 
     // Create mutex for thread-safety
     _mutex = xSemaphoreCreateMutex();
@@ -16,8 +17,65 @@ void LogToQueue::begin(Print *output, bool showTimestamp, QueueHandle_t q)
     this->setBufferSize(255);  // Maximum buffer size for uint8_t
 }
 
+void LogToQueue::beginManaged(Print *output, bool showTimestamp, uint16_t queueSize)
+{
+    // Validate parameters
+    if (output == NULL || queueSize == 0) {
+        return;
+    }
+
+    // Reasonable limit to avoid memory exhaustion
+    const uint16_t MAX_QUEUE_SIZE = 2000;
+    if (queueSize > MAX_QUEUE_SIZE) {
+        output->print(F("[LogToQueue] WARNING: Queue size "));
+        output->print(queueSize);
+        output->print(F(" clamped to "));
+        output->println(MAX_QUEUE_SIZE);
+        queueSize = MAX_QUEUE_SIZE;
+    }
+
+    // Create internal queue
+    _queue = xQueueCreate(queueSize, sizeof(char));
+    if (_queue == NULL) {
+        output->println(F("[LogToQueue] ERROR: Failed to create queue"));
+        return;
+    }
+
+    // Mark as owned
+    _ownsQueue = true;
+    _managedQueueSize = queueSize;
+
+    // Configure output
+    _logOutput = output;
+    _showTimestamp = showTimestamp;
+
+    // Create mutex (reuse existing logic)
+    _mutex = xSemaphoreCreateMutex();
+    if (_mutex == NULL) {
+        // Error mutex - cleanup queue
+        vQueueDelete(_queue);
+        _queue = NULL;
+        _ownsQueue = false;
+        _managedQueueSize = 0;
+        output->println(F("[LogToQueue] ERROR: Failed to create mutex"));
+        return;
+    }
+
+    // Initialize buffer (reuse existing code)
+    this->setBufferSize(255);
+}
+
 LogToQueue::~LogToQueue()
 {
+    // Clean up managed queue
+    if (_ownsQueue && _queue != NULL) {
+        vQueueDelete(_queue);
+        _queue = NULL;
+        _ownsQueue = false;
+        _managedQueueSize = 0;
+    }
+    // NOTE: If !_ownsQueue, queue is external - user manages it
+
     // Clean up mutex
     if (_mutex != NULL) {
         vSemaphoreDelete(_mutex);
@@ -174,4 +232,67 @@ void LogToQueue::printTimestamp()
 void LogToQueue::setDump(bool enable)
 {
     _enable = enable;
+}
+
+bool LogToQueue::getLine(char* buffer, size_t maxLen, TickType_t timeout)
+{
+    // Validate parameters
+    if (buffer == NULL || maxLen == 0) {
+        return false;
+    }
+
+    // Check queue exists
+    if (_queue == NULL) {
+        buffer[0] = '\0';
+        return false;
+    }
+
+    size_t idx = 0;
+    char ch;
+    TickType_t startTime = xTaskGetTickCount();
+
+    // Read characters until newline or buffer full
+    while (idx < maxLen - 1) {
+        // Calculate remaining timeout
+        TickType_t elapsed = xTaskGetTickCount() - startTime;
+        TickType_t remainingTimeout = (timeout > 0 && elapsed < timeout)
+                                      ? (timeout - elapsed)
+                                      : 0;
+
+        // Try to receive character
+        BaseType_t result = xQueueReceive(_queue, &ch, remainingTimeout);
+
+        if (result != pdTRUE) {
+            // Queue empty or timeout
+            break;
+        }
+
+        // Check for line terminator
+        if (ch == '\n') {
+            buffer[idx] = '\0';
+            return true;  // Complete line found
+        }
+
+        // Add character to buffer
+        buffer[idx++] = ch;
+
+        // Reset timeout for inter-character gaps
+        if (timeout > 0) {
+            startTime = xTaskGetTickCount();
+        }
+    }
+
+    // Null-terminate partial or complete line
+    buffer[idx] = '\0';
+
+    // Return true if we got at least one character
+    return (idx > 0);
+}
+
+UBaseType_t LogToQueue::getQueueMessagesWaiting() const
+{
+    if (_queue == NULL) {
+        return 0;
+    }
+    return uxQueueMessagesWaiting(_queue);
 }
