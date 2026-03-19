@@ -146,3 +146,12 @@ When modifying the library:
 - **Buffer Size**: If changing buffer size with `setBufferSize()`, remember timestamp consumes 13 bytes
 - **Character Encoding**: Library operates on raw bytes; no UTF-8 handling
 - **Timestamp Format**: Hardcoded 13-character format - changes require updating buffer size logic
+
+## Arduino Library Manager Indexing
+
+### Processing Log URL
+The Arduino Library Manager indexing status for this library can be checked at:
+```
+https://downloads.arduino.cc/libraries/logs/github.com/hardmax/LogToQueue/
+```
+This URL shows whether a new release/version has been picked up and processed by the Arduino indexer.
